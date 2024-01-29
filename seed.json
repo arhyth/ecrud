@@ -1,0 +1,44 @@
+{
+    "users": [
+        {
+            "id": 1,
+            "firstName": "John",
+            "lastName": "Doe",
+            "dateOfBirth": "1985-05-15",
+            "email": "john.doe@example.com",
+            "isActive": true,
+            "department": "Engineering",
+            "role": "Software Developer"
+        },
+        {
+            "id": 2,
+            "firstName": "Jane",
+            "lastName": "Smith",
+            "dateOfBirth": "1990-09-22",
+            "email": "jane.smith@example.com",
+            "isActive": true,
+            "department": "Marketing",
+            "role": "Marketing Specialist"
+        },
+        {
+            "id": 3,
+            "firstName": "Robert",
+            "lastName": "Johnson",
+            "dateOfBirth": "1988-03-10",
+            "email": "robert.johnson@example.com",
+            "isActive": false,
+            "department": "Finance",
+            "role": "Financial Analyst"
+        },
+        {
+            "id": 4,
+            "firstName": "Emily",
+            "lastName": "Williams",
+            "dateOfBirth": "1995-12-08",
+            "email": "emily.williams@example.com",
+            "isActive": true,
+            "department": "Human Resources",
+            "role": "HR Specialist"
+        } 
+    ]
+}
