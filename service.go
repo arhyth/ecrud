@@ -1,14 +1,12 @@
 package ecrud
 
 import (
-	"errors"
+	"net/mail"
 	"sync"
+	"time"
 )
 
-var (
-	ErrNotFound = errors.New("employee not found")
-)
-
+// Service is complete domain interface of eCRUD
 type Service interface {
 	List() []Employee
 	Get(int) (Employee, error)
@@ -17,6 +15,7 @@ type Service interface {
 	Delete(int) error
 }
 
+// ServiceStub is a "stub" implementation of Service
 type ServiceStub struct {
 	mtx     *sync.RWMutex
 	records map[int]Employee
@@ -26,9 +25,16 @@ type ServiceStub struct {
 var _ Service = (*ServiceStub)(nil)
 
 func NewServiceStub(records map[int]Employee) *ServiceStub {
+	var seq int
+	for id := range records {
+		if id > seq {
+			seq = id
+		}
+	}
 	return &ServiceStub{
 		mtx:     &sync.RWMutex{},
 		records: records,
+		seq:     seq,
 	}
 }
 
@@ -49,7 +55,7 @@ func (stub *ServiceStub) Get(id int) (Employee, error) {
 
 	e, found := stub.records[id]
 	if !found {
-		return e, ErrNotFound
+		return e, ErrNotFound{ID: id}
 	}
 
 	return e, nil
@@ -59,9 +65,9 @@ func (stub *ServiceStub) Create(attrs EmployeeAttrs) (int, error) {
 	stub.mtx.Lock()
 	defer stub.mtx.Unlock()
 
-	seq := stub.seq + 1
-	stub.records[seq] = Employee{
-		ID:          seq,
+	stub.seq += 1
+	stub.records[stub.seq] = Employee{
+		ID:          stub.seq,
 		FirstName:   *attrs.FirstName,
 		LastName:    *attrs.LastName,
 		DateOfBirth: *attrs.DateOfBirth,
@@ -71,7 +77,7 @@ func (stub *ServiceStub) Create(attrs EmployeeAttrs) (int, error) {
 		Role:        attrs.Role,
 	}
 
-	return seq, nil
+	return stub.seq, nil
 }
 
 func (stub *ServiceStub) Update(id int, attrs EmployeeAttrs) error {
@@ -80,7 +86,7 @@ func (stub *ServiceStub) Update(id int, attrs EmployeeAttrs) error {
 
 	e, found := stub.records[id]
 	if !found {
-		return ErrNotFound
+		return ErrNotFound{ID: id}
 	}
 
 	if attrs.FirstName != nil {
@@ -116,10 +122,104 @@ func (stub *ServiceStub) Delete(id int) error {
 
 	_, found := stub.records[id]
 	if !found {
-		return ErrNotFound
+		return ErrNotFound{ID: id}
 	}
 
 	delete(stub.records, id)
 
 	return nil
+}
+
+// ServiceValidationMiddleware is a middleware that validates request parameters
+// at the domain layer. This avoids having to duplicate decoding when done at
+// the protocol (HTTP) layer.
+type ServiceValidationMiddleware struct {
+	inner Service
+}
+
+var _ Service = (*ServiceValidationMiddleware)(nil)
+
+func NewServiceValidationMiddleware(svc Service) *ServiceValidationMiddleware {
+	return &ServiceValidationMiddleware{inner: svc}
+}
+
+func (mw *ServiceValidationMiddleware) List() (employees []Employee) {
+	return mw.inner.List()
+}
+
+func (mw *ServiceValidationMiddleware) Get(id int) (Employee, error) {
+	return mw.Get(id)
+}
+
+func (mw *ServiceValidationMiddleware) Create(attrs EmployeeAttrs) (int, error) {
+	var witherrors []string
+	if attrs.FirstName == nil || len(*attrs.FirstName) <= 1 {
+		witherrors = append(witherrors, "firstName")
+	}
+	if attrs.LastName == nil || len(*attrs.LastName) <= 1 {
+		witherrors = append(witherrors, "lastName")
+	}
+	if attrs.DateOfBirth == nil {
+		witherrors = append(witherrors, "dateOfBirth")
+	} else if _, err := time.Parse(time.DateOnly, *attrs.DateOfBirth); err != nil {
+		witherrors = append(witherrors, "dateOfBirth")
+	}
+	if attrs.Email == nil {
+		witherrors = append(witherrors, "dateOfBirth")
+	} else if _, err := mail.ParseAddress(*attrs.Email); err != nil {
+		witherrors = append(witherrors, "email")
+	}
+
+	if attrs.Department != nil && len(*attrs.Department) <= 1 {
+		witherrors = append(witherrors, "department")
+	}
+	if attrs.Role != nil && len(*attrs.Department) <= 1 {
+		witherrors = append(witherrors, "role")
+	}
+
+	if witherrors != nil {
+		return 0, ErrBadRequest{
+			Fields: witherrors,
+		}
+	}
+
+	return mw.inner.Create(attrs)
+}
+
+func (mw *ServiceValidationMiddleware) Update(id int, attrs EmployeeAttrs) error {
+	var witherrors []string
+	if attrs.FirstName != nil && len(*attrs.FirstName) <= 1 {
+		witherrors = append(witherrors, "firstName")
+	}
+	if attrs.LastName != nil && len(*attrs.LastName) <= 1 {
+		witherrors = append(witherrors, "lastName")
+	}
+	if attrs.DateOfBirth != nil {
+		if _, err := time.Parse(time.DateOnly, *attrs.DateOfBirth); err != nil {
+			witherrors = append(witherrors, "dateOfBirth")
+		}
+	}
+	if attrs.Email != nil {
+		if _, err := mail.ParseAddress(*attrs.Email); err != nil {
+			witherrors = append(witherrors, "email")
+		}
+	}
+	if attrs.Department != nil && len(*attrs.Department) <= 1 {
+		witherrors = append(witherrors, "department")
+	}
+	if attrs.Role != nil && len(*attrs.Department) <= 1 {
+		witherrors = append(witherrors, "role")
+	}
+
+	if witherrors != nil {
+		return ErrBadRequest{
+			Fields: witherrors,
+		}
+	}
+
+	return mw.inner.Update(id, attrs)
+}
+
+func (mw *ServiceValidationMiddleware) Delete(id int) error {
+	return mw.Delete(id)
 }
