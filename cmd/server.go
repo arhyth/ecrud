@@ -32,11 +32,13 @@ func main() {
 	svc := ecrud.NewServiceStub(records)
 	hndlr := ecrud.NewHandler(svc)
 	mux := chi.NewRouter()
+	mux.NotFound(ecrud.HTTPNotFound)
 	mux.MethodFunc(http.MethodGet, "/employees", hndlr.List)
-	mux.Route("/employees/{employeeID}", func(r chi.Router) {
+	mux.MethodFunc(http.MethodGet, "/employees/", hndlr.List)
+	mux.Route("/employees/{employeeID:[0-9]+}", func(r chi.Router) {
 		r.Get("/", hndlr.Get)
-		// r.Put("/", hndlr.Update)
-		// r.Delete("/", hndlr.Delete)
+		r.Put("/", hndlr.Update)
+		r.Delete("/", hndlr.Delete)
 	})
 
 	http.ListenAndServe(":3000", mux)
