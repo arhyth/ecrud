@@ -19,22 +19,26 @@ type Service interface {
 type ServiceStub struct {
 	mtx     *sync.RWMutex
 	records map[int]Employee
+	dedup   map[string]struct{}
 	seq     int
 }
 
 var _ Service = (*ServiceStub)(nil)
 
 func NewServiceStub(records map[int]Employee) *ServiceStub {
-	var seq int
-	for id := range records {
+	seq := 0
+	dedup := map[string]struct{}{}
+	for id, e := range records {
 		if id > seq {
 			seq = id
 		}
+		dedup[e.Email] = struct{}{}
 	}
 	return &ServiceStub{
 		mtx:     &sync.RWMutex{},
 		records: records,
 		seq:     seq,
+		dedup:   dedup,
 	}
 }
 
@@ -64,6 +68,12 @@ func (stub *ServiceStub) Get(id int) (Employee, error) {
 func (stub *ServiceStub) Create(attrs EmployeeAttrs) (int, error) {
 	stub.mtx.Lock()
 	defer stub.mtx.Unlock()
+
+	if _, exists := stub.dedup[*attrs.Email]; exists {
+		return 0, ErrBadRequest{
+			Fields: []string{"email"},
+		}
+	}
 
 	stub.seq += 1
 	stub.records[stub.seq] = Employee{
@@ -120,12 +130,13 @@ func (stub *ServiceStub) Delete(id int) error {
 	stub.mtx.Lock()
 	defer stub.mtx.Unlock()
 
-	_, found := stub.records[id]
+	e, found := stub.records[id]
 	if !found {
 		return ErrNotFound{ID: id}
 	}
 
 	delete(stub.records, id)
+	delete(stub.dedup, e.Email)
 
 	return nil
 }
@@ -148,7 +159,7 @@ func (mw *ServiceValidationMiddleware) List() (employees []Employee) {
 }
 
 func (mw *ServiceValidationMiddleware) Get(id int) (Employee, error) {
-	return mw.Get(id)
+	return mw.inner.Get(id)
 }
 
 func (mw *ServiceValidationMiddleware) Create(attrs EmployeeAttrs) (int, error) {
@@ -165,7 +176,7 @@ func (mw *ServiceValidationMiddleware) Create(attrs EmployeeAttrs) (int, error) 
 		witherrors = append(witherrors, "dateOfBirth")
 	}
 	if attrs.Email == nil {
-		witherrors = append(witherrors, "dateOfBirth")
+		witherrors = append(witherrors, "email")
 	} else if _, err := mail.ParseAddress(*attrs.Email); err != nil {
 		witherrors = append(witherrors, "email")
 	}
@@ -173,7 +184,7 @@ func (mw *ServiceValidationMiddleware) Create(attrs EmployeeAttrs) (int, error) 
 	if attrs.Department != nil && len(*attrs.Department) <= 1 {
 		witherrors = append(witherrors, "department")
 	}
-	if attrs.Role != nil && len(*attrs.Department) <= 1 {
+	if attrs.Role != nil && len(*attrs.Role) <= 1 {
 		witherrors = append(witherrors, "role")
 	}
 
@@ -207,7 +218,7 @@ func (mw *ServiceValidationMiddleware) Update(id int, attrs EmployeeAttrs) error
 	if attrs.Department != nil && len(*attrs.Department) <= 1 {
 		witherrors = append(witherrors, "department")
 	}
-	if attrs.Role != nil && len(*attrs.Department) <= 1 {
+	if attrs.Role != nil && len(*attrs.Role) <= 1 {
 		witherrors = append(witherrors, "role")
 	}
 
@@ -221,5 +232,5 @@ func (mw *ServiceValidationMiddleware) Update(id int, attrs EmployeeAttrs) error
 }
 
 func (mw *ServiceValidationMiddleware) Delete(id int) error {
-	return mw.Delete(id)
+	return mw.inner.Delete(id)
 }

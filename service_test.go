@@ -33,6 +33,21 @@ func TestServiceStub(t *testing.T) {
 		as.Greater(id, 1)
 	})
 
+	t.Run("`Create` returns error on existing email", func(tt *testing.T) {
+		as := assert.New(tt)
+		fn, ln, dob, em := "Linus", "Torvalds", "1969-12-28", "hire@me.com"
+		attrs := ecrud.EmployeeAttrs{
+			FirstName:   &fn,
+			LastName:    &ln,
+			DateOfBirth: &dob,
+			Email:       &em,
+		}
+		_, err := svc.Create(attrs)
+		concrete := ecrud.ErrBadRequest{}
+		as.ErrorAs(err, &concrete)
+		as.Contains(concrete.Fields, "email")
+	})
+
 	t.Run("`List` returns list of employees", func(tt *testing.T) {
 		as := assert.New(tt)
 		employees := svc.List()

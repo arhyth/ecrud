@@ -6,7 +6,6 @@ import (
 	"os"
 
 	"github.com/arhyth/ecrud"
-	"github.com/go-chi/chi/v5"
 	"github.com/rs/zerolog"
 )
 
@@ -29,17 +28,9 @@ func main() {
 		records[e.ID] = e
 	}
 
-	svc := ecrud.NewServiceStub(records)
-	hndlr := ecrud.NewHandler(svc)
-	mux := chi.NewRouter()
-	mux.NotFound(ecrud.HTTPNotFound)
-	mux.MethodFunc(http.MethodGet, "/employees", hndlr.List)
-	mux.MethodFunc(http.MethodGet, "/employees/", hndlr.List)
-	mux.Route("/employees/{employeeID:[0-9]+}", func(r chi.Router) {
-		r.Get("/", hndlr.Get)
-		r.Put("/", hndlr.Update)
-		r.Delete("/", hndlr.Delete)
-	})
+	stub := ecrud.NewServiceStub(records)
+	svc := ecrud.NewServiceValidationMiddleware(stub)
+	hndlr := ecrud.NewHTTPServer(svc)
 
-	http.ListenAndServe(":3000", mux)
+	http.ListenAndServe(":3000", hndlr)
 }
