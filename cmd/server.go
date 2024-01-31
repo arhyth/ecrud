@@ -10,6 +10,7 @@ import (
 )
 
 func main() {
+	zerolog.SetGlobalLevel(zerolog.InfoLevel)
 	logger := zerolog.New(os.Stderr).With().Timestamp().Logger()
 
 	f, err := os.Open("./seed.json")
@@ -28,9 +29,9 @@ func main() {
 		records[e.ID] = e
 	}
 
-	stub := ecrud.NewServiceStub(records)
-	svc := ecrud.NewServiceValidationMiddleware(stub)
-	hndlr := ecrud.NewHTTPServer(svc)
+	stub := ecrud.NewServiceStub(records, &logger)
+	svc := ecrud.NewServiceValidationMiddleware(stub, &logger)
+	hndlr := ecrud.NewHTTPServer(svc, &logger)
 
 	http.ListenAndServe(":3000", hndlr)
 }

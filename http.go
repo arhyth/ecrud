@@ -7,12 +7,16 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/rs/zerolog"
 )
 
 // NewHTTPServer returns an http.Handler
 // that serves all the eCRUD endpoints
-func NewHTTPServer(svc Service) http.Handler {
-	hndlr := &httpHandler{Svc: svc}
+func NewHTTPServer(svc Service, log *zerolog.Logger) http.Handler {
+	hndlr := &httpHandler{
+		svc: svc,
+		log: log,
+	}
 	mux := chi.NewRouter()
 	mux.NotFound(HTTPNotFound)
 	mux.Route("/employees", func(r chi.Router) {
@@ -31,15 +35,19 @@ func NewHTTPServer(svc Service) http.Handler {
 // httpHandler implements net/http.HandlerFunc interfaces
 // for each of the inner Service methods
 type httpHandler struct {
-	Svc Service
+	svc Service
+	log *zerolog.Logger
 }
 
 func (hndlr *httpHandler) List(w http.ResponseWriter, r *http.Request) {
-	employees := hndlr.Svc.List()
+	employees := hndlr.svc.List()
 	w.Header().Set("Content-Type", "application/json")
 	err := json.NewEncoder(w).Encode(employees)
 	if err != nil {
-		WriteHTTPError(w, err)
+		hndlr.log.Error().
+			Err(err).
+			Msg("response encoding failed")
+		hndlr.WriteHTTPError(w, err)
 	}
 }
 
@@ -47,18 +55,18 @@ func (hndlr *httpHandler) Get(w http.ResponseWriter, r *http.Request) {
 	idstr := chi.URLParam(r, "employeeID")
 	id, err := strconv.Atoi(idstr)
 	if err != nil {
-		WriteHTTPError(w, err)
+		hndlr.WriteHTTPError(w, err)
 		return
 	}
-	employee, err := hndlr.Svc.Get(id)
+	employee, err := hndlr.svc.Get(id)
 	if err != nil {
-		WriteHTTPError(w, err)
+		hndlr.WriteHTTPError(w, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	err = json.NewEncoder(w).Encode(employee)
 	if err != nil {
-		WriteHTTPError(w, err)
+		hndlr.WriteHTTPError(w, err)
 	}
 }
 
@@ -66,12 +74,12 @@ func (hndlr *httpHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var attrs EmployeeAttrs
 	err := json.NewDecoder(r.Body).Decode(&attrs)
 	if err != nil {
-		WriteHTTPError(w, err)
+		hndlr.WriteHTTPError(w, err)
 		return
 	}
-	id, err := hndlr.Svc.Create(attrs)
+	id, err := hndlr.svc.Create(attrs)
 	if err != nil {
-		WriteHTTPError(w, err)
+		hndlr.WriteHTTPError(w, err)
 		return
 	}
 
@@ -82,7 +90,10 @@ func (hndlr *httpHandler) Create(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	err = json.NewEncoder(w).Encode(resp)
 	if err != nil {
-		WriteHTTPError(w, err)
+		hndlr.log.Error().
+			Err(err).
+			Msg("response encoding failed")
+		hndlr.WriteHTTPError(w, err)
 	}
 }
 
@@ -90,24 +101,27 @@ func (hndlr *httpHandler) Update(w http.ResponseWriter, r *http.Request) {
 	idstr := chi.URLParam(r, "employeeID")
 	id, err := strconv.Atoi(idstr)
 	if err != nil {
-		WriteHTTPError(w, err)
+		hndlr.WriteHTTPError(w, err)
 		return
 	}
 	var attrs EmployeeAttrs
 	err = json.NewDecoder(r.Body).Decode(&attrs)
 	if err != nil {
-		WriteHTTPError(w, err)
+		hndlr.WriteHTTPError(w, err)
 		return
 	}
-	err = hndlr.Svc.Update(id, attrs)
+	err = hndlr.svc.Update(id, attrs)
 	if err != nil {
-		WriteHTTPError(w, err)
+		hndlr.WriteHTTPError(w, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	err = json.NewEncoder(w).Encode(attrs)
 	if err != nil {
-		WriteHTTPError(w, err)
+		hndlr.log.Error().
+			Err(err).
+			Msg("response encoding failed")
+		hndlr.WriteHTTPError(w, err)
 	}
 }
 
@@ -115,12 +129,12 @@ func (hndlr *httpHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	idstr := chi.URLParam(r, "employeeID")
 	id, err := strconv.Atoi(idstr)
 	if err != nil {
-		WriteHTTPError(w, err)
+		hndlr.WriteHTTPError(w, err)
 		return
 	}
-	err = hndlr.Svc.Delete(id)
+	err = hndlr.svc.Delete(id)
 	if err != nil {
-		WriteHTTPError(w, err)
+		hndlr.WriteHTTPError(w, err)
 		return
 	}
 	resp := map[string]int{
@@ -129,26 +143,38 @@ func (hndlr *httpHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	err = json.NewEncoder(w).Encode(resp)
 	if err != nil {
-		WriteHTTPError(w, err)
+		hndlr.log.Error().
+			Err(err).
+			Msg("response encoding failed")
+		hndlr.WriteHTTPError(w, err)
 	}
 }
 
-func WriteHTTPError(w http.ResponseWriter, err error) {
+func (hndlr *httpHandler) WriteHTTPError(w http.ResponseWriter, err error) {
+	var ne error
+	defer func() {
+		if ne != nil {
+			hndlr.log.Error().
+				Err(ne).
+				Msg("error response encoding failed")
+		}
+	}()
+
 	w.Header().Set("Content-Type", "application/json")
 	errnf := &ErrNotFound{}
 	errbr := &ErrBadRequest{}
 	if errors.As(err, errnf) {
 		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(errnf)
+		ne = json.NewEncoder(w).Encode(errnf)
 	} else if errors.As(err, errbr) {
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(errbr)
+		ne = json.NewEncoder(w).Encode(errbr)
 	} else {
 		w.WriteHeader(http.StatusInternalServerError)
 		resp := map[string]string{
 			"message": "server error",
 		}
-		json.NewEncoder(w).Encode(resp)
+		ne = json.NewEncoder(w).Encode(resp)
 	}
 }
 

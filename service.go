@@ -4,6 +4,8 @@ import (
 	"net/mail"
 	"sync"
 	"time"
+
+	"github.com/rs/zerolog"
 )
 
 // Service is complete domain interface of eCRUD
@@ -21,11 +23,12 @@ type ServiceStub struct {
 	records map[int]Employee
 	dedup   map[string]struct{}
 	seq     int
+	log     *zerolog.Logger
 }
 
 var _ Service = (*ServiceStub)(nil)
 
-func NewServiceStub(records map[int]Employee) *ServiceStub {
+func NewServiceStub(records map[int]Employee, logr *zerolog.Logger) *ServiceStub {
 	seq := 0
 	dedup := map[string]struct{}{}
 	for id, e := range records {
@@ -39,6 +42,7 @@ func NewServiceStub(records map[int]Employee) *ServiceStub {
 		records: records,
 		seq:     seq,
 		dedup:   dedup,
+		log:     logr,
 	}
 }
 
@@ -59,6 +63,9 @@ func (stub *ServiceStub) Get(id int) (Employee, error) {
 
 	e, found := stub.records[id]
 	if !found {
+		stub.log.Info().
+			Int("id", id).
+			Msg("`Get` not found")
 		return e, ErrNotFound{ID: id}
 	}
 
@@ -96,6 +103,9 @@ func (stub *ServiceStub) Update(id int, attrs EmployeeAttrs) error {
 
 	e, found := stub.records[id]
 	if !found {
+		stub.log.Info().
+			Int("id", id).
+			Msg("`Update` not found")
 		return ErrNotFound{ID: id}
 	}
 
@@ -146,12 +156,16 @@ func (stub *ServiceStub) Delete(id int) error {
 // the protocol (HTTP) layer.
 type ServiceValidationMiddleware struct {
 	inner Service
+	log   *zerolog.Logger
 }
 
 var _ Service = (*ServiceValidationMiddleware)(nil)
 
-func NewServiceValidationMiddleware(svc Service) *ServiceValidationMiddleware {
-	return &ServiceValidationMiddleware{inner: svc}
+func NewServiceValidationMiddleware(svc Service, log *zerolog.Logger) *ServiceValidationMiddleware {
+	return &ServiceValidationMiddleware{
+		inner: svc,
+		log:   log,
+	}
 }
 
 func (mw *ServiceValidationMiddleware) List() (employees []Employee) {
@@ -189,6 +203,9 @@ func (mw *ServiceValidationMiddleware) Create(attrs EmployeeAttrs) (int, error) 
 	}
 
 	if witherrors != nil {
+		mw.log.Info().
+			Strs("fields", witherrors).
+			Msg("`Create` bad request")
 		return 0, ErrBadRequest{
 			Fields: witherrors,
 		}
@@ -223,6 +240,10 @@ func (mw *ServiceValidationMiddleware) Update(id int, attrs EmployeeAttrs) error
 	}
 
 	if witherrors != nil {
+		mw.log.Info().
+			Int("id", id).
+			Strs("fields", witherrors).
+			Msg("`Update` bad request")
 		return ErrBadRequest{
 			Fields: witherrors,
 		}

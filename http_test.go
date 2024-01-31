@@ -7,12 +7,14 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/arhyth/ecrud"
 )
 
 func TestHandler(t *testing.T) {
+	log := zerolog.Nop()
 	seed := map[int]ecrud.Employee{
 		1: {
 			FirstName:   "David",
@@ -21,9 +23,9 @@ func TestHandler(t *testing.T) {
 			Email:       "hire@me.com",
 		},
 	}
-	stub := ecrud.NewServiceStub(seed)
-	svc := ecrud.NewServiceValidationMiddleware(stub)
-	hndlr := ecrud.NewHTTPServer(svc)
+	stub := ecrud.NewServiceStub(seed, &log)
+	svc := ecrud.NewServiceValidationMiddleware(stub, &log)
+	hndlr := ecrud.NewHTTPServer(svc, &log)
 
 	t.Run("`List` returns employee records", func(tt *testing.T) {
 		as := assert.New(tt)

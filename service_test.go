@@ -3,12 +3,14 @@ package ecrud_test
 import (
 	"testing"
 
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/arhyth/ecrud"
 )
 
 func TestServiceStub(t *testing.T) {
+	log := zerolog.Nop()
 	svc := ecrud.NewServiceStub(map[int]ecrud.Employee{
 		3: {
 			FirstName:   "David",
@@ -16,7 +18,7 @@ func TestServiceStub(t *testing.T) {
 			DateOfBirth: "2001-08-15",
 			Email:       "hire@me.com",
 		},
-	})
+	}, &log)
 
 	t.Run("`Create` increments id", func(tt *testing.T) {
 		as := assert.New(tt)
@@ -64,6 +66,7 @@ func TestServiceStub(t *testing.T) {
 }
 
 func TestServiceMiddleware(t *testing.T) {
+	log := zerolog.Nop()
 	stub := ecrud.NewServiceStub(map[int]ecrud.Employee{
 		1: {
 			FirstName:   "David",
@@ -71,8 +74,8 @@ func TestServiceMiddleware(t *testing.T) {
 			DateOfBirth: "2001-04-15",
 			Email:       "hire@me.com",
 		},
-	})
-	svc := ecrud.NewServiceValidationMiddleware(stub)
+	}, &log)
+	svc := ecrud.NewServiceValidationMiddleware(stub, &log)
 
 	t.Run("validates `Create` params", func(tt *testing.T) {
 		as := assert.New(tt)
